@@ -36,6 +36,10 @@ import CoreGraphics
             self.setNeedsDisplay()
         }
     }
+
+    var completionIndex: Int = 0
+
+    var actualIndex: Int = 0
     
     /// The current selected index
     open var currentIndex: Int = 0 {
@@ -43,9 +47,14 @@ import CoreGraphics
             if let delegate = self.delegate {
                 delegate.progressBar?(self, willSelectItemAtIndex: newValue)
             }
+            if(newValue==numberOfPoints){
+                completionIndex = newValue
+                actualIndex = numberOfPoints - 1
+            } else {
+                actualIndex = newValue
+            }
         }
         didSet {
-//            animationRendering = true
             self.setNeedsDisplay()
         }
     }
@@ -194,6 +203,24 @@ import CoreGraphics
             self.setNeedsDisplay()
         }
     }
+
+    @IBInspectable open var backgroundShapeFillColor: UIColor = UIColor(red: 238.0/255.0, green: 238.0/255.0, blue: 238.0/255.0, alpha: 0.8) {
+        didSet {
+            self.setNeedsDisplay()
+        }
+    }
+
+    @IBInspectable open var selectedTextColor: UIColor = UIColor(red: 238.0/255.0, green: 238.0/255.0, blue: 238.0/255.0, alpha: 0.8) {
+        didSet {
+            self.setNeedsDisplay()
+        }
+    }
+
+    @IBInspectable open var currentTextColor: UIColor = UIColor(red: 238.0/255.0, green: 238.0/255.0, blue: 238.0/255.0, alpha: 0.8) {
+        didSet {
+            self.setNeedsDisplay()
+        }
+    }
     
     /// The component selected background color
     @IBInspectable open var selectedBackgoundColor: UIColor = UIColor(red: 251.0/255.0, green: 167.0/255.0, blue: 51.0/255.0, alpha: 1.0) {
@@ -231,6 +258,8 @@ import CoreGraphics
     fileprivate var maskLayer = CAShapeLayer()
     
     fileprivate var centerPoints = [CGPoint]()
+
+    fileprivate var nextToCenterPoints = [CGPoint]()
     
     fileprivate var _textLayers = [Int:CATextLayer]()
     
@@ -309,9 +338,9 @@ import CoreGraphics
     
     override open func draw(_ rect: CGRect) {
         super.draw(rect)
-        
+
         if !useLastState {
-            completedTillIndex = currentIndex
+            completedTillIndex = actualIndex
         }
         
         self.centerPoints.removeAll()
@@ -321,48 +350,52 @@ import CoreGraphics
         let distanceBetweenCircles = (self.bounds.width - (CGFloat(numberOfPoints) * 2 * largerRadius)) / CGFloat(numberOfPoints - 1)
         
         var xCursor: CGFloat = largerRadius
+        var xCursorNextToCenter: CGFloat = -largerRadius
         
         for _ in 0...(numberOfPoints - 1) {
             centerPoints.append(CGPoint(x: xCursor, y: bounds.height / 2))
+            nextToCenterPoints.append(CGPoint(x: xCursorNextToCenter, y: bounds.height / 2))
             xCursor += 2 * largerRadius + distanceBetweenCircles
+            xCursorNextToCenter += 2 * largerRadius + distanceBetweenCircles
         }
         
         let largerLineWidth = fmax(selectedOuterCircleLineWidth, lastStateOuterCircleLineWidth)
         
         if(!animationRendering) {
             
-            let clearCentersPath = self._shapePath(self.centerPoints, aRadius: largerRadius + largerLineWidth, aLineHeight: _lineHeight)
-            clearCentersLayer.path = clearCentersPath.cgPath
-            clearCentersLayer.fillColor = viewBackgroundColor.cgColor
-            
             let bgPath = self._shapePath(self.centerPoints, aRadius: _radius, aLineHeight: _lineHeight)
             backgroundLayer.path = bgPath.cgPath
-            backgroundLayer.fillColor = backgroundShapeColor.cgColor
+            backgroundLayer.fillColor = backgroundShapeFillColor.cgColor //backgroundShapeColor.cgColor
+            backgroundLayer.strokeColor = backgroundShapeColor.cgColor
             
             let progressPath = self._shapePath(self.centerPoints, aRadius: _progressRadius, aLineHeight: _progressLineHeight)
             progressLayer.path = progressPath.cgPath
-            progressLayer.fillColor = selectedBackgoundColor.cgColor
-            
-            let clearSelectedRadius = fmax(_progressRadius, _progressRadius + selectedOuterCircleLineWidth)
-            let clearSelectedPath = self._shapePathForSelected(self.centerPoints[currentIndex], aRadius: clearSelectedRadius)
-            clearSelectionLayer.path = clearSelectedPath.cgPath
-            clearSelectionLayer.fillColor = viewBackgroundColor.cgColor
-            
-            let selectedPath = self._shapePathForSelected(self.centerPoints[currentIndex], aRadius: _radius)
-            selectionLayer.path = selectedPath.cgPath
-            selectionLayer.fillColor = currentSelectedCenterColor.cgColor
+            progressLayer.fillColor = backgroundShapeColor.cgColor // selectedBackgoundColor.cgColor
 
+            let selectedPath = self._shapePathForSelected(self.centerPoints[actualIndex], aRadius: _progressRadius)
+            selectionLayer.path = selectedPath.cgPath
+            selectionLayer.fillColor = selectedBackgoundColor.cgColor
+            if completionIndex == numberOfPoints {
+                selectionLayer.path = selectedPath.cgPath
+                selectionLayer.fillColor = UIColor.clear.cgColor
+            }
             if !useLastState {
-                let selectedPathCenter = self._shapePathForSelectedPathCenter(self.centerPoints[currentIndex], aRadius: _progressRadius)
+                let selectedPathCenter = self._shapePathForSelectedPathCenter(self.centerPoints[actualIndex], aRadius: _progressRadius)
                 selectionCenterLayer.path = selectedPathCenter.cgPath
                 selectionCenterLayer.strokeColor = selectedOuterCircleStrokeColor.cgColor
+                if completionIndex == numberOfPoints {
+                    selectionCenterLayer.strokeColor = UIColor.clear.cgColor
+                }
                 selectionCenterLayer.fillColor = UIColor.clear.cgColor
                 selectionCenterLayer.lineWidth = selectedOuterCircleLineWidth
                 selectionCenterLayer.strokeEnd = 1.0
             } else {
-                let selectedPathCenter = self._shapePathForSelectedPathCenter(self.centerPoints[currentIndex], aRadius: _progressRadius + selectedOuterCircleLineWidth)
+                let selectedPathCenter = self._shapePathForSelectedPathCenter(self.centerPoints[actualIndex], aRadius: _progressRadius + selectedOuterCircleLineWidth)
                 selectionCenterLayer.path = selectedPathCenter.cgPath
                 selectionCenterLayer.strokeColor = selectedOuterCircleStrokeColor.cgColor
+                if completionIndex == numberOfPoints {
+                    selectionCenterLayer.strokeColor = UIColor.clear.cgColor
+                }
                 selectionCenterLayer.fillColor = UIColor.clear.cgColor
                 selectionCenterLayer.lineWidth = selectedOuterCircleLineWidth
                 
@@ -371,6 +404,9 @@ import CoreGraphics
                     let lastStateLayerPath = self._shapePathForLastState(self.centerPoints[completedTillIndex])
                     lastStateLayer.path = lastStateLayerPath.cgPath
                     lastStateLayer.strokeColor = lastStateOuterCircleStrokeColor.cgColor
+                    if completionIndex == numberOfPoints {
+                        lastStateLayer.strokeColor = UIColor.clear.cgColor
+                    }
                     lastStateLayer.fillColor = viewBackgroundColor.cgColor
                     lastStateLayer.lineWidth = lastStateOuterCircleLineWidth
                     
@@ -378,16 +414,19 @@ import CoreGraphics
                     lastStateCenterLayer.path = lastStateCenterLayerPath.cgPath
                     lastStateCenterLayer.fillColor = lastStateCenterColor.cgColor
                 }
-                if currentIndex > 0 {
-                    let lastPoint = centerPoints[currentIndex-1]
-                    let centerCurrent = centerPoints[currentIndex]
+                if actualIndex > 0 {
+                    let lastPoint = centerPoints[actualIndex-1]
+                    let centerCurrent = centerPoints[actualIndex]
                     let xCursor = centerCurrent.x - progressRadius - _radius
                     let routeToSelectedPath = UIBezierPath()
-                    
+
                     routeToSelectedPath.move(to: CGPoint(x: lastPoint.x + progressRadius + selectedOuterCircleLineWidth, y: lastPoint.y))
                     routeToSelectedPath.addLine(to: CGPoint(x: xCursor, y: centerCurrent.y))
                     roadToSelectionLayer.path = routeToSelectedPath.cgPath
                     roadToSelectionLayer.strokeColor = selectedBackgoundColor.cgColor
+                    if completionIndex == numberOfPoints {
+                        roadToSelectionLayer.strokeColor = UIColor.clear.cgColor
+                    }
                     roadToSelectionLayer.lineWidth = progressLineHeight
                 }
 
@@ -397,26 +436,33 @@ import CoreGraphics
         self.renderBottomTextIndexes()
         self.renderTextIndexes()
         
-        let progressCenterPoints = Array<CGPoint>(centerPoints[0..<(completedTillIndex+1)])
+        let progressCenterPoints = Array<CGPoint>(nextToCenterPoints[0..<(completedTillIndex+1)])
         
         if let currentProgressCenterPoint = progressCenterPoints.last {
             
-            let maskPath = self._maskPath(currentProgressCenterPoint)
+            var maskPath = self._maskPath(currentProgressCenterPoint)
             maskLayer.path = maskPath.cgPath
             
             CATransaction.begin()
             let progressAnimation = CABasicAnimation(keyPath: "path")
             progressAnimation.duration = stepAnimationDuration * CFTimeInterval(abs(completedTillIndex - previousIndex))
+            if completionIndex == numberOfPoints {
+                let largerRadius = fmax(_radius, _progressRadius)
+                let completionProgressPoint = CGPoint(x: currentProgressCenterPoint.x + 2 * largerRadius, y: currentProgressCenterPoint.y)
+                maskPath = self._maskPath(completionProgressPoint)
+                maskLayer.path = maskPath.cgPath
+
+            }
             progressAnimation.toValue = maskPath
             progressAnimation.isRemovedOnCompletion = false
             progressAnimation.timingFunction = CAMediaTimingFunction(name: CAMediaTimingFunctionName.easeInEaseOut)
             
             
             CATransaction.setCompletionBlock { () -> Void in
-                if(self.animationRendering) {
+//                if(self.animationRendering) {
                     if let delegate = self.delegate {
-                        delegate.progressBar?(self, didSelectItemAtIndex: self.currentIndex)
-                    }
+                        delegate.progressBar?(self, didSelectItemAtIndex: self.actualIndex)
+//                    }
                     self.animationRendering = false
                 }
             }
@@ -424,7 +470,7 @@ import CoreGraphics
             maskLayer.add(progressAnimation, forKey: "progressAnimation")
             CATransaction.commit()
         }
-        self.previousIndex = self.currentIndex
+        self.previousIndex = self.actualIndex
     }
     
     /**
@@ -443,10 +489,13 @@ import CoreGraphics
             textLayer.font = CTFontCreateWithName(textLayerFont.fontName as CFString, textLayerFont.pointSize, nil)
             textLayer.fontSize = textLayerFont.pointSize
             
-            if i == currentIndex || i == completedTillIndex {
-                textLayer.foregroundColor = centerLayerDarkBackgroundTextColor.cgColor
+            if i == actualIndex || i == completedTillIndex || i > actualIndex{
+                textLayer.foregroundColor =  currentTextColor.cgColor// centerLayerDarkBackgroundTextColor.cgColor
+                if completionIndex == numberOfPoints {
+                    textLayer.foregroundColor =  selectedTextColor.cgColor
+                }
             } else {
-                textLayer.foregroundColor = centerLayerTextColor?.cgColor
+                textLayer.foregroundColor =  selectedTextColor.cgColor// centerLayerTextColor?.cgColor
             }
             
             if let text = self.delegate?.progressBar?(self, textAtIndex: i, position: FlexibleSteppedProgressBarTextLocation.center) {
@@ -478,7 +527,7 @@ import CoreGraphics
             textLayer.fontSize = (stepTextFont?.pointSize)!
             
             
-            if i == currentIndex {
+            if i == actualIndex {
                 textLayer.foregroundColor = currentSelectedTextColor.cgColor
             } else {
                 textLayer.foregroundColor = stepTextColor!.cgColor
@@ -509,7 +558,7 @@ import CoreGraphics
             textLayer.font = stepTextFont
             textLayer.fontSize = (stepTextFont?.pointSize)!
             
-            if i == currentIndex {
+            if i == actualIndex {
                 textLayer.foregroundColor = currentSelectedTextColor.cgColor
             } else {
                 textLayer.foregroundColor = stepTextColor!.cgColor
@@ -683,9 +732,7 @@ import CoreGraphics
     }
     
     fileprivate func _shapePathForLastState(_ center: CGPoint) -> UIBezierPath {
-//        let angle = CGFloat(M_PI)/4
         let path = UIBezierPath()
-//        path.addArcWithCenter(center, radius: self._progressRadius + _radius, startAngle: angle, endAngle: 2*CGFloat(M_PI) + CGFloat(M_PI)/4, clockwise: true)
         path.addArc(withCenter: center, radius: self._progressRadius + lastStateOuterCircleLineWidth, startAngle: 0, endAngle: 4*CGFloat.pi, clockwise: true)
         return path
     }
@@ -752,13 +799,13 @@ import CoreGraphics
             
             
             
-            if(self.currentIndex != selectedIndex) {
+            if(self.actualIndex != selectedIndex) {
                 if let canSelect = self.delegate?.progressBar?(self, canSelectItemAtIndex: selectedIndex) {
                     if (canSelect) {
                         if (selectedIndex > completedTillIndex) {
                             completedTillIndex = selectedIndex
                         }
-                        self.currentIndex = selectedIndex
+                        self.actualIndex = selectedIndex
                         self.animationRendering = true
                     }
                 }
